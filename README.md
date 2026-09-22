@@ -37,27 +37,26 @@ tables/seed data are created automatically on first run.
 
 ## Deploying to the Hetzner VM
 
-The VM already runs nginx for other services, so the first step is to check
-what's there before claiming a port:
+Already deployed at `https://<vm-ip>:8443` (self-signed cert — the browser
+warns once, click through). To redeploy from scratch, or set this up on a
+different host:
 
-```bash
-ssh <vm>
-ss -tlnp
-sudo nginx -T | less
-```
+The VM runs nginx for other domain-based sites via `/etc/nginx/conf.d/*.conf`
+(no `sites-available`/`sites-enabled` split here). Gunicorn listens
+internally on `127.0.0.1:8420`; nginx terminates TLS on `8443` externally,
+since there's no domain to hang this app off of. Both ports were confirmed
+free with `ss -tlnp` before use — check again if reusing this on another VM.
 
-Pick a free internal port for gunicorn (the templates below assume `8420`)
-and a free external port for this app's nginx block (they assume `8443`,
-since there's no domain to hang a path-based route off of). Adjust the
-`deploy/` templates if those are taken.
-
-1. Copy the repo to the VM, e.g. `/root/timetrack`.
+1. `git clone https://github.com/Dkpiro/hetzner-timetrack.git /root/timetrack`
 2. `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt`
+   (needs the `python3-venv` apt package if `venv` creation fails)
 3. Create `/root/timetrack/.env` (mode `600`) with:
    ```
-   TIMETRACK_PASSWORD_HASH=<generated hash>
+   TIMETRACK_PASSWORD=<your password>
    TIMETRACK_SECRET_KEY=<random hex, e.g. `openssl rand -hex 32`>
    ```
+   (or set `TIMETRACK_PASSWORD_HASH` instead, see Configuration above, if
+   you'd rather not keep the plaintext password on disk)
 4. Generate a self-signed cert:
    ```bash
    sudo mkdir -p /etc/ssl/timetrack
@@ -66,31 +65,36 @@ since there's no domain to hang a path-based route off of). Adjust the
      -out /etc/ssl/timetrack/timetrack.crt \
      -subj "/CN=timetrack"
    ```
-5. Install the systemd unit:
+5. Install the systemd unit (`--preload` matters — see note below):
    ```bash
    sudo cp deploy/timetrack.service /etc/systemd/system/
    sudo systemctl daemon-reload
    sudo systemctl enable --now timetrack
    ```
-6. Install the nginx site (adjust the port first if 8443 is taken):
+6. Install the nginx site:
    ```bash
-   sudo cp deploy/nginx_timetrack.conf /etc/nginx/sites-available/timetrack
-   sudo ln -s /etc/nginx/sites-available/timetrack /etc/nginx/sites-enabled/
+   sudo cp deploy/nginx_timetrack.conf /etc/nginx/conf.d/timetrack.conf
    sudo nginx -t && sudo systemctl reload nginx
    ```
 7. Install the daily backup timer:
    ```bash
-   sudo cp deploy/backup.service deploy/backup.timer /etc/systemd/system/
+   sudo cp deploy/timetrack-backup.service deploy/timetrack-backup.timer /etc/systemd/system/
    sudo systemctl daemon-reload
-   sudo systemctl enable --now backup.timer
+   sudo systemctl enable --now timetrack-backup.timer
    ```
-8. Open `https://<vm-ip>:8443` — your browser will warn about the
-   self-signed cert once; click through. Log in with the password you hashed
-   in step 3.
+8. Open `https://<vm-ip>:8443`, click through the self-signed cert warning,
+   log in.
 
 Because there's no domain and no Let's Encrypt cert, the browser warning is
 expected — the connection is still encrypted, which is the point (so the
 password isn't sent in the clear to the public internet).
+
+**Why `--preload`:** gunicorn's default worker model imports `app.py` (and
+runs `create_app()` → `init_db()`) separately in *each* worker process. On
+first boot against an empty DB, two workers can race to seed the default
+categories and crash on a UNIQUE constraint. `--preload` loads the app once
+in the master before forking, so setup runs exactly once. Seeding is also
+written to be idempotent (`INSERT OR IGNORE`) as a second line of defense.
 
 ## Data safety
 
