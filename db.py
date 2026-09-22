@@ -41,18 +41,24 @@ def init_db():
 
 
 def seed_if_empty(db):
-    row = db.execute("SELECT COUNT(*) AS n FROM categories").fetchone()
-    if row["n"] > 0:
-        return
+    # INSERT OR IGNORE (rather than a check-then-insert) so this stays safe if
+    # multiple worker processes start concurrently and race to seed.
     for i, name in enumerate(SEED_CATEGORIES):
         db.execute(
-            "INSERT INTO categories (name, sort_order) VALUES (?, ?)", (name, i)
+            "INSERT OR IGNORE INTO categories (name, sort_order) VALUES (?, ?)",
+            (name, i),
         )
     cats = {
         r["name"]: r["id"] for r in db.execute("SELECT id, name FROM categories")
     }
     for cat_name, topics in SEED_TOPICS.items():
         for topic_name in topics:
+            exists = db.execute(
+                "SELECT 1 FROM topics WHERE name = ? AND category_id = ?",
+                (topic_name, cats[cat_name]),
+            ).fetchone()
+            if exists:
+                continue
             db.execute(
                 "INSERT INTO topics (name, category_id) VALUES (?, ?)",
                 (topic_name, cats[cat_name]),
