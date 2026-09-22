@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Time Tracker — Topics</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+{% include "_nav.html" %}
+<div class="page">
+    <h2 style="margin-top:0;">Categories</h2>
+    <div id="category-list"></div>
+    <form class="inline" id="new-category-form">
+        <input type="text" id="new-category-name" placeholder="New category name">
+        <button type="submit" class="primary small">Add category</button>
+    </form>
+
+    <h2>Topics</h2>
+    <div id="topic-list"></div>
+    <form class="inline" id="new-topic-form">
+        <input type="text" id="new-topic-name" placeholder="New topic name">
+        <select id="new-topic-category"></select>
+        <button type="submit" class="primary small">Add topic</button>
+    </form>
+</div>
+
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+<script>
+TimeTracker.initTopics();
+</script>
+</body>
+</html>

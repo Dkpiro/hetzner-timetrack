@@ -1,0 +1,6 @@
+[Unit]
+Description=Backup timetrack.db
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /root/timetrack/deploy/backup.sh

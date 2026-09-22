@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Time Tracker — Week</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+{% include "_nav.html" %}
+<div class="page">
+    <div class="week-nav">
+        <button class="small" id="prev-week">&laquo; Prev</button>
+        <div id="week-label" class="muted"></div>
+        <button class="small" id="next-week">Next &raquo;</button>
+    </div>
+
+    <div class="card">
+        <div class="row-flex"><strong>Total this week</strong><strong id="week-total">0h 00m</strong></div>
+    </div>
+
+    <h2>By category</h2>
+    <div id="by-category"></div>
+
+    <h2>By topic</h2>
+    <div id="by-topic"></div>
+
+    <h2>By day</h2>
+    <table>
+        <thead><tr><th>Day</th><th class="num">Total</th></tr></thead>
+        <tbody id="by-day"></tbody>
+    </table>
+</div>
+
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+<script>
+TimeTracker.initWeek();
+</script>
+</body>
+</html>

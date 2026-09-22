@@ -1,0 +1,8 @@
+<nav class="tabs">
+    <a href="{{ url_for('today') }}" class="{{ 'active' if active == 'today' else '' }}">Today</a>
+    <a href="{{ url_for('week') }}" class="{{ 'active' if active == 'week' else '' }}">Week</a>
+    <a href="{{ url_for('topics_page') }}" class="{{ 'active' if active == 'topics' else '' }}">Topics</a>
+    <form method="post" action="{{ url_for('logout') }}" style="margin-left:auto;padding:6px 0;">
+        <button type="submit" class="link">Log out</button>
+    </form>
+</nav>

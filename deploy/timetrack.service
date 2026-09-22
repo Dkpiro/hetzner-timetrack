@@ -1,0 +1,14 @@
+[Unit]
+Description=Time Tracker (gunicorn)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/timetrack
+EnvironmentFile=/root/timetrack/.env
+ExecStart=/root/timetrack/.venv/bin/gunicorn -w 2 -b 127.0.0.1:8420 app:app
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
