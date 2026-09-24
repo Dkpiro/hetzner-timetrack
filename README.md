@@ -8,6 +8,22 @@ The running timer is server-side state (an open row in `time_entries`), so a
 page refresh, browser close, or network blip never loses it — reloading just
 re-reads `/api/status` and resumes counting from `start_ts`.
 
+## Keeping the timer visible / correcting mistakes
+
+- **Edit** button on each row in the Today table lets you fix the topic,
+  start time, or end time after the fact (forgot to switch, got pulled into
+  a call, etc.). Leave the end time blank to keep an entry running.
+- **Pop out** opens the live timer in its own small window. In Chrome/Edge
+  this uses the [Document Picture-in-Picture API](https://developer.chrome.com/docs/web-platform/document-picture-in-picture),
+  which floats above every other window on the desktop, not just the
+  browser — that's the actual "always visible" answer. Other browsers fall
+  back to a plain popup window (`/widget`); pin it always-on-top yourself
+  with a tool like [PowerToys' "Always on Top"](https://learn.microsoft.com/windows/powertoys/always-on-top) (`Win+Ctrl+T`).
+- **Enable alerts** turns on a gentle one-time desktop notification at 15,
+  30, and 45 minutes into whatever topic is running — nothing after 45, so
+  long tasks don't keep pinging you. Browser-permission-gated, tied to the
+  Today tab being open.
+
 ## Local development
 
 ```bash

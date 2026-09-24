@@ -9,11 +9,17 @@
 <body>
 {% include "_nav.html" %}
 <div class="page">
-    <div class="card">
-        <div class="timer-topic" id="timer-topic">No topic running</div>
-        <div class="timer-display idle" id="timer-display">00:00:00</div>
-        <div class="row-flex" style="justify-content:center;">
-            <button class="stop" id="stop-btn" style="display:none;">Stop</button>
+    <div class="card" id="timer-card">
+        <div id="widget-content">
+            <div class="timer-topic" id="timer-topic">No topic running</div>
+            <div class="timer-display idle" id="timer-display">00:00:00</div>
+            <div class="row-flex" style="justify-content:center;">
+                <button class="stop" id="stop-btn" style="display:none;">Stop</button>
+            </div>
+        </div>
+        <div class="row-flex" style="justify-content:center;gap:8px;margin-top:10px;">
+            <button class="small" id="popout-btn" title="Open the timer in a floating always-on-top window">⧉ Pop out</button>
+            <button class="small" id="notif-btn" title="Get a gentle notification at 15/30/45 min on a topic">🔔 Enable alerts</button>
         </div>
     </div>
 

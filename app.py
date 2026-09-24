@@ -73,6 +73,11 @@ def register_routes(app):
     def week():
         return render_template("week.html")
 
+    @app.route("/widget")
+    @login_required
+    def widget():
+        return render_template("widget.html")
+
     @app.route("/topics")
     @login_required
     def topics_page():

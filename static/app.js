@@ -42,6 +42,20 @@ const TimeTracker = (() => {
         return (end - start) / 1000;
     }
 
+    function toLocalTimeInputValue(iso) {
+        const d = new Date(iso);
+        return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    }
+
+    // Combines an HH:MM (local) with the calendar date of referenceIso (also local).
+    // Editing across midnight isn't supported — same simplifying assumption as
+    // the rest of the app's "today"/"week" date-boundary logic.
+    function combineDateAndTime(referenceIso, hhmm) {
+        const ref = new Date(referenceIso);
+        const [h, m] = hhmm.split(":").map(Number);
+        return new Date(ref.getFullYear(), ref.getMonth(), ref.getDate(), h, m, 0).toISOString();
+    }
+
     function groupTopicsByCategory(topics) {
         const map = new Map();
         for (const t of topics) {
@@ -55,9 +69,13 @@ const TimeTracker = (() => {
 
     // ---------------- Today page ----------------
 
+    const ALERT_THRESHOLD_MINUTES = [15, 30, 45];
+
     function initToday() {
         let tickHandle = null;
         let activeEntry = null;
+        let topicsCache = [];
+        const notifiedKeys = new Set();
 
         function renderStatus() {
             const display = document.getElementById("timer-display");
@@ -68,6 +86,7 @@ const TimeTracker = (() => {
                 topicLabel.textContent = `${activeEntry.category_name} / ${activeEntry.topic_name}`;
                 stopBtn.style.display = "inline-block";
                 display.textContent = fmtHms(entryDurationSeconds(activeEntry));
+                checkTimeAlerts(activeEntry);
             } else {
                 display.classList.add("idle");
                 topicLabel.textContent = "No topic running";
@@ -87,8 +106,93 @@ const TimeTracker = (() => {
             renderStatus();
         }
 
+        // ---- Gentle time-on-topic alerts (15/30/45 min, nothing after) ----
+
+        function updateNotifBtnLabel() {
+            const btn = document.getElementById("notif-btn");
+            if (!btn) return;
+            if (!("Notification" in window)) {
+                btn.textContent = "🔔 Alerts unsupported";
+                btn.disabled = true;
+                return;
+            }
+            if (Notification.permission === "granted") btn.textContent = "🔔 Alerts on";
+            else if (Notification.permission === "denied") btn.textContent = "🔕 Alerts blocked";
+            else btn.textContent = "🔔 Enable alerts";
+        }
+
+        function checkTimeAlerts(entry) {
+            if (!("Notification" in window) || Notification.permission !== "granted") return;
+            const elapsedMin = entryDurationSeconds(entry) / 60;
+            for (const threshold of ALERT_THRESHOLD_MINUTES) {
+                const key = `${entry.id}:${threshold}`;
+                if (elapsedMin >= threshold && !notifiedKeys.has(key)) {
+                    notifiedKeys.add(key);
+                    new Notification(`${threshold} min on ${entry.topic_name}`, {
+                        body: entry.category_name,
+                        silent: true,
+                        tag: key,
+                    });
+                }
+            }
+        }
+
+        document.getElementById("notif-btn")?.addEventListener("click", async () => {
+            if (!("Notification" in window)) return;
+            if (Notification.permission === "default") {
+                await Notification.requestPermission();
+            }
+            updateNotifBtnLabel();
+        });
+        updateNotifBtnLabel();
+
+        // ---- Pop-out floating timer (Document Picture-in-Picture where
+        // supported, a plain small popup window otherwise) ----
+
+        const widgetContent = document.getElementById("widget-content");
+        const widgetHome = widgetContent.parentElement;
+        const widgetHomeNext = widgetContent.nextSibling;
+        let pipWindow = null;
+
+        document.getElementById("popout-btn")?.addEventListener("click", async () => {
+            if (pipWindow) {
+                pipWindow.focus();
+                return;
+            }
+            if ("documentPictureInPicture" in window) {
+                try {
+                    pipWindow = await window.documentPictureInPicture.requestWindow({ width: 280, height: 140 });
+                } catch (err) {
+                    console.warn("Document Picture-in-Picture unavailable, falling back to a popup window:", err);
+                    pipWindow = null;
+                }
+            }
+            if (pipWindow) {
+                const link = pipWindow.document.createElement("link");
+                link.rel = "stylesheet";
+                link.href = "/static/style.css";
+                pipWindow.document.head.appendChild(link);
+                const style = pipWindow.document.createElement("style");
+                style.textContent = `
+                    html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text);
+                                 display: flex; align-items: center; justify-content: center;
+                                 font-family: -apple-system, "Segoe UI", Roboto, sans-serif; }
+                    #widget-content { width: 100%; text-align: center; padding: 6px; }
+                `;
+                pipWindow.document.head.appendChild(style);
+                pipWindow.document.body.appendChild(widgetContent);
+                pipWindow.addEventListener("pagehide", () => {
+                    widgetHome.insertBefore(widgetContent, widgetHomeNext);
+                    pipWindow = null;
+                }, { once: true });
+            } else {
+                window.open("/widget", "timetrack-widget", "width=300,height=160,popup=yes");
+            }
+        });
+
         async function refreshTopics() {
             const topics = await api("/api/topics");
+            topicsCache = topics;
             const grid = document.getElementById("topic-grid");
             grid.innerHTML = "";
             for (const group of groupTopicsByCategory(topics)) {
@@ -123,6 +227,120 @@ const TimeTracker = (() => {
             return { start: start.toISOString(), end: end.toISOString() };
         }
 
+        function renderViewRow(tr, e) {
+            tr.innerHTML = "";
+
+            const topicTd = document.createElement("td");
+            const catLine = document.createElement("div");
+            catLine.className = "muted";
+            catLine.style.fontSize = "11px";
+            catLine.textContent = e.category_name;
+            const topicLine = document.createElement("div");
+            topicLine.textContent = e.topic_name;
+            topicTd.appendChild(catLine);
+            topicTd.appendChild(topicLine);
+            tr.appendChild(topicTd);
+
+            const fromTd = document.createElement("td");
+            fromTd.textContent = fmtLocalTime(e.start_ts);
+            tr.appendChild(fromTd);
+
+            const toTd = document.createElement("td");
+            toTd.textContent = e.end_ts ? fmtLocalTime(e.end_ts) : "running";
+            tr.appendChild(toTd);
+
+            const durTd = document.createElement("td");
+            durTd.className = "num";
+            durTd.textContent = fmtHoursMinutes(entryDurationSeconds(e));
+            tr.appendChild(durTd);
+
+            const actionTd = document.createElement("td");
+            const editBtn = document.createElement("button");
+            editBtn.className = "small";
+            editBtn.textContent = "Edit";
+            editBtn.title = "Adjust topic / start / end time";
+            editBtn.addEventListener("click", () => renderEditRow(tr, e));
+            actionTd.appendChild(editBtn);
+
+            const delBtn = document.createElement("button");
+            delBtn.className = "small";
+            delBtn.textContent = "✕";
+            delBtn.title = "Delete entry";
+            delBtn.addEventListener("click", async () => {
+                if (!confirm("Delete this entry?")) return;
+                await api(`/api/entries/${e.id}`, { method: "DELETE" });
+                await refreshEntries();
+                await refreshStatus();
+            });
+            actionTd.appendChild(delBtn);
+            tr.appendChild(actionTd);
+        }
+
+        function renderEditRow(tr, e) {
+            tr.innerHTML = "";
+
+            const topicTd = document.createElement("td");
+            const topicSelect = document.createElement("select");
+            let options = topicsCache;
+            if (!options.some((t) => t.id === e.topic_id)) {
+                options = [...options, { id: e.topic_id, name: e.topic_name, category_name: e.category_name }];
+            }
+            topicSelect.innerHTML = options
+                .map((t) => `<option value="${t.id}" ${t.id === e.topic_id ? "selected" : ""}>${t.category_name} / ${t.name}</option>`)
+                .join("");
+            topicTd.appendChild(topicSelect);
+            tr.appendChild(topicTd);
+
+            const fromTd = document.createElement("td");
+            const fromInput = document.createElement("input");
+            fromInput.type = "time";
+            fromInput.value = toLocalTimeInputValue(e.start_ts);
+            fromTd.appendChild(fromInput);
+            tr.appendChild(fromTd);
+
+            const toTd = document.createElement("td");
+            const toInput = document.createElement("input");
+            toInput.type = "time";
+            if (e.end_ts) {
+                toInput.value = toLocalTimeInputValue(e.end_ts);
+            } else {
+                toInput.placeholder = "running";
+                toInput.title = "Leave blank to keep this entry running; set a time to close it out";
+            }
+            toTd.appendChild(toInput);
+            tr.appendChild(toTd);
+
+            const durTd = document.createElement("td");
+            durTd.className = "num muted";
+            durTd.textContent = "—";
+            tr.appendChild(durTd);
+
+            const actionTd = document.createElement("td");
+            const saveBtn = document.createElement("button");
+            saveBtn.className = "small primary";
+            saveBtn.textContent = "Save";
+            saveBtn.addEventListener("click", async () => {
+                const payload = {
+                    topic_id: parseInt(topicSelect.value, 10),
+                    start_ts: combineDateAndTime(e.start_ts, fromInput.value),
+                };
+                if (toInput.value) {
+                    payload.end_ts = combineDateAndTime(e.end_ts || e.start_ts, toInput.value);
+                }
+                await api(`/api/entries/${e.id}`, { method: "PATCH", body: JSON.stringify(payload) });
+                await refreshEntries();
+                await refreshStatus();
+            });
+            actionTd.appendChild(saveBtn);
+
+            const cancelBtn = document.createElement("button");
+            cancelBtn.className = "small";
+            cancelBtn.textContent = "Cancel";
+            cancelBtn.addEventListener("click", () => renderViewRow(tr, e));
+            actionTd.appendChild(cancelBtn);
+            tr.appendChild(actionTd);
+        }
+
         async function refreshEntries() {
             const { start, end } = localDayBoundsIso(0);
             const entries = await api(`/api/entries?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`);
@@ -132,38 +350,7 @@ const TimeTracker = (() => {
             empty.style.display = entries.length ? "none" : "block";
             for (const e of entries) {
                 const tr = document.createElement("tr");
-
-                const topicTd = document.createElement("td");
-                topicTd.textContent = e.topic_name;
-                tr.appendChild(topicTd);
-
-                const fromTd = document.createElement("td");
-                fromTd.textContent = fmtLocalTime(e.start_ts);
-                tr.appendChild(fromTd);
-
-                const toTd = document.createElement("td");
-                toTd.textContent = e.end_ts ? fmtLocalTime(e.end_ts) : "running";
-                tr.appendChild(toTd);
-
-                const durTd = document.createElement("td");
-                durTd.className = "num";
-                durTd.textContent = fmtHoursMinutes(entryDurationSeconds(e));
-                tr.appendChild(durTd);
-
-                const actionTd = document.createElement("td");
-                const delBtn = document.createElement("button");
-                delBtn.className = "small";
-                delBtn.textContent = "✕";
-                delBtn.title = "Delete entry";
-                delBtn.addEventListener("click", async () => {
-                    if (!confirm("Delete this entry?")) return;
-                    await api(`/api/entries/${e.id}`, { method: "DELETE" });
-                    await refreshEntries();
-                    await refreshStatus();
-                });
-                actionTd.appendChild(delBtn);
-                tr.appendChild(actionTd);
-
+                renderViewRow(tr, e);
                 body.appendChild(tr);
             }
         }
@@ -390,5 +577,44 @@ const TimeTracker = (() => {
         refreshCategories().then(cats => refreshTopics(cats));
     }
 
-    return { initToday, initWeek, initTopics };
+    // ---------------- Widget page (popup fallback when Document
+    // Picture-in-Picture isn't supported by the browser) ----------------
+
+    function initWidget() {
+        let activeEntry = null;
+
+        function render() {
+            const display = document.getElementById("w-display");
+            const topicLabel = document.getElementById("w-topic");
+            const stopBtn = document.getElementById("w-stop");
+            if (activeEntry) {
+                display.classList.remove("idle");
+                topicLabel.textContent = `${activeEntry.category_name} / ${activeEntry.topic_name}`;
+                display.textContent = fmtHms(entryDurationSeconds(activeEntry));
+                stopBtn.style.display = "inline-block";
+            } else {
+                display.classList.add("idle");
+                topicLabel.textContent = "No topic running";
+                display.textContent = "00:00:00";
+                stopBtn.style.display = "none";
+            }
+        }
+
+        async function poll() {
+            const data = await api("/api/status");
+            activeEntry = data.active;
+            render();
+        }
+
+        document.getElementById("w-stop").addEventListener("click", async () => {
+            await api("/api/stop", { method: "POST" });
+            await poll();
+        });
+
+        poll();
+        setInterval(render, 1000);
+        setInterval(poll, 5000);
+    }
+
+    return { initToday, initWeek, initTopics, initWidget };
 })();

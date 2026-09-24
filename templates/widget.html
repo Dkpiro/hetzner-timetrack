@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>⏱ Time Tracker</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<style>
+    html, body { height: 100%; margin: 0; }
+    body { display: flex; align-items: center; justify-content: center; }
+    .widget-box { text-align: center; padding: 10px; }
+    .widget-box .timer-display { margin-bottom: 10px; }
+</style>
+</head>
+<body>
+<div class="widget-box">
+    <div class="timer-topic" id="w-topic">No topic running</div>
+    <div class="timer-display idle" id="w-display">00:00:00</div>
+    <button class="stop small" id="w-stop" style="display:none;">Stop</button>
+</div>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+<script>
+TimeTracker.initWidget();
+</script>
+</body>
+</html>
