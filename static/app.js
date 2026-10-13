@@ -47,6 +47,20 @@ const TimeTracker = (() => {
         return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
     }
 
+    function toLocalDateInputValue(d) {
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    }
+
+    function parseLocalDate(yyyymmdd) {
+        const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(yyyymmdd || "");
+        if (!m) return null;
+        return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    }
+
+    function startOfLocalDay(d) {
+        return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    }
+
     // Combines an HH:MM (local) with the calendar date of referenceIso (also local).
     // Editing across midnight isn't supported — same simplifying assumption as
     // the rest of the app's "today"/"week" date-boundary logic.
@@ -77,21 +91,40 @@ const TimeTracker = (() => {
         let topicsCache = [];
         const notifiedKeys = new Set();
 
+        // The day shown in the entries table; ?d=YYYY-MM-DD preselects it
+        // (the Week view links here).
+        let viewDate = startOfLocalDay(
+            parseLocalDate(new URLSearchParams(window.location.search).get("d")) || new Date()
+        );
+
         function renderStatus() {
             const display = document.getElementById("timer-display");
             const topicLabel = document.getElementById("timer-topic");
             const stopBtn = document.getElementById("stop-btn");
+            const staleHint = document.getElementById("stale-hint");
             if (activeEntry) {
                 display.classList.remove("idle");
                 topicLabel.textContent = `${activeEntry.category_name} / ${activeEntry.topic_name}`;
                 stopBtn.style.display = "inline-block";
                 display.textContent = fmtHms(entryDurationSeconds(activeEntry));
                 checkTimeAlerts(activeEntry);
+
+                const startedOn = startOfLocalDay(new Date(activeEntry.start_ts));
+                if (startedOn.getTime() < startOfLocalDay(new Date()).getTime()) {
+                    const when = new Date(activeEntry.start_ts).toLocaleString([], {
+                        weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",
+                    });
+                    document.getElementById("stale-text").textContent = `Running since ${when}.`;
+                    staleHint.style.display = "block";
+                } else {
+                    staleHint.style.display = "none";
+                }
             } else {
                 display.classList.add("idle");
                 topicLabel.textContent = "No topic running";
                 stopBtn.style.display = "none";
                 display.textContent = "00:00:00";
+                staleHint.style.display = "none";
             }
         }
 
@@ -220,12 +253,54 @@ const TimeTracker = (() => {
             }
         }
 
-        function localDayBoundsIso(offsetDays = 0) {
-            const now = new Date();
-            const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offsetDays);
+        function dayBoundsIso(date) {
+            const start = startOfLocalDay(date);
             const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1);
             return { start: start.toISOString(), end: end.toISOString() };
         }
+
+        function isViewingToday() {
+            return viewDate.getTime() === startOfLocalDay(new Date()).getTime();
+        }
+
+        function renderDayControls() {
+            const label = document.getElementById("day-label");
+            label.textContent = isViewingToday()
+                ? "Today"
+                : viewDate.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });
+            const picker = document.getElementById("day-picker");
+            picker.value = toLocalDateInputValue(viewDate);
+            picker.max = toLocalDateInputValue(new Date());
+            document.getElementById("day-next").disabled = isViewingToday();
+            document.getElementById("day-today").style.visibility = isViewingToday() ? "hidden" : "visible";
+        }
+
+        function setViewDate(date) {
+            const target = startOfLocalDay(date);
+            const today = startOfLocalDay(new Date());
+            viewDate = target.getTime() > today.getTime() ? today : target;
+            const url = new URL(window.location.href);
+            if (isViewingToday()) url.searchParams.delete("d");
+            else url.searchParams.set("d", toLocalDateInputValue(viewDate));
+            window.history.replaceState(null, "", url);
+            renderDayControls();
+            refreshEntries();
+        }
+
+        function shiftViewDate(days) {
+            setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth(), viewDate.getDate() + days));
+        }
+
+        document.getElementById("day-prev").addEventListener("click", () => shiftViewDate(-1));
+        document.getElementById("day-next").addEventListener("click", () => shiftViewDate(1));
+        document.getElementById("day-today").addEventListener("click", () => setViewDate(new Date()));
+        document.getElementById("day-picker").addEventListener("change", (ev) => {
+            const picked = parseLocalDate(ev.target.value);
+            if (picked) setViewDate(picked);
+        });
+        document.getElementById("stale-fix").addEventListener("click", () => {
+            if (activeEntry) setViewDate(new Date(activeEntry.start_ts));
+        });
 
         function renderViewRow(tr, e) {
             tr.innerHTML = "";
@@ -342,7 +417,7 @@ const TimeTracker = (() => {
         }
 
         async function refreshEntries() {
-            const { start, end } = localDayBoundsIso(0);
+            const { start, end } = dayBoundsIso(viewDate);
             const entries = await api(`/api/entries?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`);
             const body = document.getElementById("today-body");
             const empty = document.getElementById("today-empty");
@@ -361,6 +436,7 @@ const TimeTracker = (() => {
             await refreshEntries();
         });
 
+        renderDayControls();
         refreshTopics();
         refreshStatus();
         refreshEntries();
@@ -452,7 +528,7 @@ const TimeTracker = (() => {
                 d.setDate(monday.getDate() + i);
                 const key = d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
                 const tr = document.createElement("tr");
-                tr.innerHTML = `<td>${key}</td><td class="num">${fmtHoursMinutes(byDay.get(key) || 0)}</td>`;
+                tr.innerHTML = `<td><a href="/?d=${toLocalDateInputValue(d)}" title="View / edit this day">${key}</a></td><td class="num">${fmtHoursMinutes(byDay.get(key) || 0)}</td>`;
                 body.appendChild(tr);
             }
         }

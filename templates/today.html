@@ -17,6 +17,10 @@
                 <button class="stop" id="stop-btn" style="display:none;">Stop</button>
             </div>
         </div>
+        <div id="stale-hint" class="muted" style="display:none;text-align:center;margin-top:8px;font-size:12px;">
+            <span id="stale-text"></span>
+            <button class="small" id="stale-fix">Fix it</button>
+        </div>
         <div class="row-flex" style="justify-content:center;gap:8px;margin-top:10px;">
             <button class="small" id="popout-btn" title="Open the timer in a floating always-on-top window">⧉ Pop out</button>
             <button class="small" id="notif-btn" title="Get a gentle notification at 15/30/45 min on a topic">🔔 Enable alerts</button>
@@ -26,12 +30,20 @@
     <h2>Start a topic</h2>
     <div class="topic-grid" id="topic-grid"></div>
 
-    <h2>Today</h2>
+    <div class="week-nav" style="margin-top:24px;">
+        <button class="small" id="day-prev" title="Previous day">&laquo;</button>
+        <div class="row-flex" style="gap:6px;">
+            <strong id="day-label">Today</strong>
+            <input type="date" id="day-picker">
+            <button class="small" id="day-today" title="Back to today">Today</button>
+        </div>
+        <button class="small" id="day-next" title="Next day">&raquo;</button>
+    </div>
     <table id="today-table">
         <thead><tr><th>Topic</th><th>From</th><th>To</th><th class="num">Duration</th><th></th></tr></thead>
         <tbody id="today-body"></tbody>
     </table>
-    <div id="today-empty" class="empty" style="display:none;">Nothing logged yet today.</div>
+    <div id="today-empty" class="empty" style="display:none;">Nothing logged this day.</div>
 </div>
 
 <script src="{{ url_for('static', filename='app.js') }}"></script>

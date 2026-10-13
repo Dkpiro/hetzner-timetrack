@@ -208,3 +208,6 @@ input[type=text], input[type=password], select {
 .error { color: var(--danger); font-size: 13px; margin-top: 8px; }
 
 .empty { color: var(--text-dim); font-style: italic; padding: 10px 0; }
+
+td a { color: var(--accent); text-decoration: none; }
+td a:hover { text-decoration: underline; }
