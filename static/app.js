@@ -428,6 +428,41 @@ const TimeTracker = (() => {
                 renderViewRow(tr, e);
                 body.appendChild(tr);
             }
+            renderRecap(entries);
+        }
+
+        // Keyed by topic id, not name, so same-named topics in different
+        // categories stay separate rows.
+        function renderRecap(entries) {
+            const section = document.getElementById("recap-section");
+            const body = document.getElementById("recap-body");
+            body.innerHTML = "";
+            section.style.display = entries.length ? "block" : "none";
+            const byTopic = new Map();
+            let total = 0;
+            for (const e of entries) {
+                const secs = entryDurationSeconds(e);
+                total += secs;
+                const row = byTopic.get(e.topic_id) || { category: e.category_name, topic: e.topic_name, secs: 0 };
+                row.secs += secs;
+                byTopic.set(e.topic_id, row);
+            }
+            const rows = [...byTopic.values()].sort(
+                (a, b) => a.category.localeCompare(b.category) || b.secs - a.secs
+            );
+            for (const r of rows) {
+                const tr = document.createElement("tr");
+                const catTd = document.createElement("td");
+                catTd.textContent = r.category;
+                const topicTd = document.createElement("td");
+                topicTd.textContent = r.topic;
+                const timeTd = document.createElement("td");
+                timeTd.className = "num";
+                timeTd.textContent = fmtHoursMinutes(r.secs);
+                tr.append(catTd, topicTd, timeTd);
+                body.appendChild(tr);
+            }
+            document.getElementById("recap-total").textContent = fmtHoursMinutes(total);
         }
 
         document.getElementById("stop-btn").addEventListener("click", async () => {
@@ -486,7 +521,8 @@ const TimeTracker = (() => {
                 total += secs;
 
                 byCategory.set(e.category_name, (byCategory.get(e.category_name) || 0) + secs);
-                byTopic.set(e.topic_name, (byTopic.get(e.topic_name) || 0) + secs);
+                const topicKey = `${e.category_name} / ${e.topic_name}`;
+                byTopic.set(topicKey, (byTopic.get(topicKey) || 0) + secs);
 
                 const dayKey = new Date(e.start_ts).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
                 byDay.set(dayKey, (byDay.get(dayKey) || 0) + secs);
@@ -512,7 +548,7 @@ const TimeTracker = (() => {
                 row.className = "row-flex";
                 row.style.marginBottom = "8px";
                 row.innerHTML = `
-                    <div style="width:110px;flex-shrink:0;">${name}</div>
+                    <div style="width:150px;flex-shrink:0;">${name}</div>
                     <div class="bar-track"><div class="bar-fill" style="width:${(secs / max) * 100}%"></div></div>
                     <div style="width:70px;text-align:right;flex-shrink:0;">${fmtHoursMinutes(secs)}</div>
                 `;

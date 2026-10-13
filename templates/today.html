@@ -44,6 +44,15 @@
         <tbody id="today-body"></tbody>
     </table>
     <div id="today-empty" class="empty" style="display:none;">Nothing logged this day.</div>
+
+    <div id="recap-section" style="display:none;">
+        <h2>Recap</h2>
+        <table id="recap-table">
+            <thead><tr><th>Category</th><th>Topic</th><th class="num">Time spent</th></tr></thead>
+            <tbody id="recap-body"></tbody>
+            <tfoot><tr><th colspan="2">Total</th><th class="num" id="recap-total">0h 00m</th></tr></tfoot>
+        </table>
+    </div>
 </div>
 
 <script src="{{ url_for('static', filename='app.js') }}"></script>
