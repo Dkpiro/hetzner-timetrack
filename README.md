@@ -24,6 +24,27 @@ re-reads `/api/status` and resumes counting from `start_ts`.
   long tasks don't keep pinging you. Browser-permission-gated, tied to the
   Today tab being open.
 
+## Day clock, tickets, planning
+
+- **Day clock:** *Start day* (or just starting a topic) opens the day. After
+  that the clock never stops: stopping a topic leaves you "Untracked", and any
+  time between entries is shown as an untracked row you can *Assign* to a
+  topic afterwards. *Feierabend* stops the running topic and ends the day
+  (*Reopen* undoes it). A day you forgot to finish shows a banner the next
+  morning asking when you really stopped; starting new topics is blocked until
+  it's resolved so the old clock isn't silently cut at "now".
+- **Ticket (e.g. monday item):** one optional free-text field per entry. Set it
+  from the row under the timer once a topic is running: previous tickets for
+  that topic are offered as chips, or type a new one.
+- **Plan tab:** tasks for a day (category/topic, title, notes, optional
+  estimate, ticket), drag to prioritise, *Sort short -> long*, tick off, and
+  *Move to next workday* (Fri -> Mon). The Today tab shows the top open task as
+  "Next up" with a Start button that carries its topic and ticket.
+- **Export:** `GET /api/export?start=...&end=...&format=csv|json` (ISO datetimes
+  or `YYYY-MM-DD`, compared in UTC) for importing into other tools. Works with
+  the normal login session, or with `Authorization: Bearer <token>` when
+  `TIMETRACK_API_TOKEN` is set. The Week tab has a one-click CSV link.
+
 ## Local development
 
 ```bash
@@ -50,6 +71,7 @@ tables/seed data are created automatically on first run.
 - `TIMETRACK_SECRET_KEY` — Flask session signing key. Set a fixed random
   value in production (otherwise sessions invalidate on every restart).
 - `TIMETRACK_DB` — path to the SQLite file. Defaults to `instance/timetrack.db`.
+- `TIMETRACK_API_TOKEN` — optional; enables bearer-token access to `/api/export` only.
 
 ## Deploying to the Hetzner VM
 

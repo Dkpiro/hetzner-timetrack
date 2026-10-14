@@ -1,5 +1,6 @@
 <nav class="tabs">
     <a href="{{ url_for('today') }}" class="{{ 'active' if active == 'today' else '' }}">Today</a>
+    <a href="{{ url_for('plan_page') }}" class="{{ 'active' if active == 'plan' else '' }}">Plan</a>
     <a href="{{ url_for('week') }}" class="{{ 'active' if active == 'week' else '' }}">Week</a>
     <a href="{{ url_for('topics_page') }}" class="{{ 'active' if active == 'topics' else '' }}">Topics</a>
     <form method="post" action="{{ url_for('logout') }}" style="margin-left:auto;padding:6px 0;">

@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Time Tracker — Plan</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+{% set active = 'plan' %}
+{% include "_nav.html" %}
+<div class="page">
+    <div class="week-nav">
+        <button class="small" id="plan-prev" title="Previous day">&laquo;</button>
+        <div class="row-flex" style="gap:6px;">
+            <button class="small" id="plan-today">Today</button>
+            <button class="small" id="plan-next-workday">Next workday</button>
+            <input type="date" id="plan-picker">
+        </div>
+        <button class="small" id="plan-next" title="Next day">&raquo;</button>
+    </div>
+    <div class="row-flex" style="margin-bottom:8px;">
+        <strong id="plan-label"></strong>
+        <span class="muted" id="plan-summary"></span>
+    </div>
+
+    <form class="plan-add" id="plan-form">
+        <select id="plan-topic" required></select>
+        <input type="text" class="title" id="plan-title" placeholder="Task" required>
+        <input type="number" class="est" id="plan-est" min="0" step="5" placeholder="min">
+        <input type="text" class="tk" id="plan-ticket" placeholder="ticket">
+        <button type="submit" class="primary small">Add</button>
+        <textarea id="plan-notes" rows="2" placeholder="Notes (optional)"></textarea>
+    </form>
+
+    <div class="row-flex" style="margin-bottom:6px;">
+        <h2 style="margin:0;">Priority order</h2>
+        <button class="small" id="plan-sort-est" title="Short tasks first, tasks without estimate last">Sort short → long</button>
+    </div>
+    <div id="plan-open"></div>
+    <div id="plan-empty" class="empty" style="display:none;">Nothing planned for this day.</div>
+
+    <h2>Done</h2>
+    <div id="plan-done"></div>
+</div>
+
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+<script>
+TimeTracker.initPlan();
+</script>
+</body>
+</html>

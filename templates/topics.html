@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-{% include "_nav.html" %}
+{% set active = "topics" %}{% include "_nav.html" %}
 <div class="page">
     <h2 style="margin-top:0;">Categories</h2>
     <div id="category-list"></div>

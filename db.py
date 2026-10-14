@@ -32,17 +32,31 @@ def close_db(e=None):
         db.close()
 
 
+def _column_names(db, table):
+    return {r["name"] for r in db.execute(f"PRAGMA table_info({table})")}
+
+
+def migrate(db):
+    """Additive-only migrations so existing records are never touched."""
+    if "ticket" not in _column_names(db, "time_entries"):
+        db.execute("ALTER TABLE time_entries ADD COLUMN ticket TEXT")
+
+
 def init_db():
     db = get_db()
     with open(SCHEMA_PATH, "r") as f:
         db.executescript(f.read())
+    migrate(db)
     seed_if_empty(db)
     db.commit()
 
 
 def seed_if_empty(db):
-    # INSERT OR IGNORE (rather than a check-then-insert) so this stays safe if
-    # multiple worker processes start concurrently and race to seed.
+    # Only seed a brand-new database; otherwise renamed/deleted defaults would
+    # come back on every restart. INSERT OR IGNORE keeps concurrent first
+    # boots safe.
+    if db.execute("SELECT COUNT(*) AS n FROM categories").fetchone()["n"] > 0:
+        return
     for i, name in enumerate(SEED_CATEGORIES):
         db.execute(
             "INSERT OR IGNORE INTO categories (name, sort_order) VALUES (?, ?)",
