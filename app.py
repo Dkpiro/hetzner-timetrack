@@ -399,7 +399,7 @@ def register_routes(app):
 
     # ---- API: entries ----
 
-    def _query_entries(start, end, order="DESC"):
+    def _query_entries(start, end, order="DESC", overlap=False):
         query = (
             "SELECT te.id, te.topic_id, te.start_ts, te.end_ts, te.note, te.ticket, "
             "t.name AS topic_name, c.id AS category_id, c.name AS category_name "
@@ -409,12 +409,22 @@ def register_routes(app):
             "WHERE 1=1"
         )
         params = []
-        if start:
-            query += " AND te.start_ts >= ?"
-            params.append(start)
-        if end:
-            query += " AND te.start_ts < ?"
-            params.append(end)
+        if overlap:
+            # Everything that touches [start, end): includes entries that began
+            # before `start` (e.g. overnight) and ones still running.
+            if start:
+                query += " AND (te.end_ts IS NULL OR te.end_ts > ?)"
+                params.append(start)
+            if end:
+                query += " AND te.start_ts < ?"
+                params.append(end)
+        else:
+            if start:
+                query += " AND te.start_ts >= ?"
+                params.append(start)
+            if end:
+                query += " AND te.start_ts < ?"
+                params.append(end)
         query += f" ORDER BY te.start_ts {order}"
         return db_module.get_db().execute(query, params).fetchall()
 
@@ -444,7 +454,11 @@ def register_routes(app):
             )
             db.commit()
             return jsonify({"id": cur.lastrowid})
-        rows = _query_entries(request.args.get("start"), request.args.get("end"))
+        rows = _query_entries(
+            request.args.get("start"),
+            request.args.get("end"),
+            overlap=request.args.get("overlap") == "1",
+        )
         return jsonify([dict(r) for r in rows])
 
     @app.route("/api/export")
@@ -509,6 +523,18 @@ def register_routes(app):
             values.append(_clean_ticket(data["ticket"]))
         if not fields:
             return jsonify({"error": "nothing to update"}), 400
+        current = db.execute(
+            "SELECT start_ts, end_ts FROM time_entries WHERE id = ?", (entry_id,)
+        ).fetchone()
+        if not current:
+            return jsonify({"error": "entry not found"}), 404
+        new_start = _parse_iso(data.get("start_ts", current["start_ts"]))
+        new_end_raw = data.get("end_ts", current["end_ts"])
+        new_end = _parse_iso(new_end_raw) if new_end_raw else None
+        if new_start is None or (new_end_raw and new_end is None):
+            return jsonify({"error": "invalid timestamp"}), 400
+        if new_end and new_end <= new_start:
+            return jsonify({"error": "end must be after start"}), 400
         values.append(entry_id)
         db.execute(f"UPDATE time_entries SET {', '.join(fields)} WHERE id = ?", values)
         db.commit()

@@ -89,6 +89,30 @@ const TimeTracker = (() => {
         return localDateTimeIso(new Date(referenceIso), hhmm);
     }
 
+    // For <input type="datetime-local">: local "YYYY-MM-DDTHH:MM".
+    function toLocalDateTimeInputValue(msOrIso) {
+        const d = new Date(msOrIso);
+        return `${toLocalDateInputValue(d)}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+    }
+
+    // Seconds of an entry that fall inside [loMs, hiMs); running entries end "now".
+    function clippedSeconds(entry, loMs, hiMs) {
+        const s = Math.max(Date.parse(entry.start_ts), loMs);
+        const e = Math.min(entry.end_ts ? Date.parse(entry.end_ts) : Date.now(), hiMs);
+        return Math.max(0, (e - s) / 1000);
+    }
+
+    // "09:10–09:40", or with weekday names where a boundary leaves refDay,
+    // e.g. "Mon 22:00–Tue 02:00". refDayMs = local midnight of the day shown.
+    function fmtRange(startMs, endMs, running, refDayMs) {
+        const dayOf = (ms) => startOfLocalDay(new Date(ms)).getTime();
+        const wd = (ms) => new Date(ms).toLocaleDateString([], { weekday: "short" });
+        const startPart = dayOf(startMs) !== refDayMs ? `${wd(startMs)} ${fmtClock(startMs)}` : fmtClock(startMs);
+        if (running) return `${startPart}–now`;
+        const endPart = dayOf(endMs) !== dayOf(startMs) ? `${wd(endMs)} ${fmtClock(endMs)}` : fmtClock(endMs);
+        return `${startPart}–${endPart}`;
+    }
+
     function catHue(name) {
         let h = 0;
         for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) % 360;
@@ -126,6 +150,69 @@ const TimeTracker = (() => {
             select.append(opt);
         }
         return select;
+    }
+
+    const LONG_ENTRY_SECONDS = 16 * 3600;
+
+    // Edit an existing entry, or (gap) book an untracked gap to a topic.
+    // Uses full date+time so an entry can start/end on any day.
+    function buildEntryForm({ entry, gap, topics, onSaved, onCancel }) {
+        let options = topics;
+        if (entry && !options.some((t) => t.id === entry.topic_id)) {
+            options = [...options, { id: entry.topic_id, name: entry.topic_name, category_name: entry.category_name }];
+        }
+        const select = topicSelect(options, entry ? entry.topic_id : null, entry ? null : "Choose topic…");
+        const from = el("input", {
+            type: "datetime-local",
+            value: toLocalDateTimeInputValue(entry ? entry.start_ts : gap.start),
+        });
+        const to = el("input", {
+            type: "datetime-local",
+            value: entry ? (entry.end_ts ? toLocalDateTimeInputValue(entry.end_ts) : "") : toLocalDateTimeInputValue(gap.end),
+        });
+        if (entry && !entry.end_ts) to.title = "Leave blank to keep this entry running; set a date and time to close it";
+        const ticket = el("input", { type: "text", placeholder: "ticket", value: entry && entry.ticket ? entry.ticket : "" });
+
+        const save = el("button", { className: "small primary", textContent: "Save" });
+        save.addEventListener("click", async () => {
+            if (!select.value) {
+                alert("Choose a topic.");
+                return;
+            }
+            const startMs = new Date(from.value).getTime();
+            if (!from.value || Number.isNaN(startMs)) {
+                alert("Enter a start date and time.");
+                return;
+            }
+            const endMs = to.value ? new Date(to.value).getTime() : null;
+            if (endMs !== null && endMs <= startMs) {
+                alert("The end must be after the start.");
+                return;
+            }
+            if (!entry && endMs === null) {
+                alert("Enter an end for the gap.");
+                return;
+            }
+            if (endMs !== null && (endMs - startMs) / 1000 > LONG_ENTRY_SECONDS &&
+                !confirm(`That entry is ${fmtHoursMinutes((endMs - startMs) / 1000)} long. Save it anyway?`)) {
+                return;
+            }
+            const body = {
+                topic_id: parseInt(select.value, 10),
+                start_ts: new Date(startMs).toISOString(),
+                ticket: ticket.value,
+            };
+            if (endMs !== null) body.end_ts = new Date(endMs).toISOString();
+            if (entry) {
+                await api(`/api/entries/${entry.id}`, { method: "PATCH", body: JSON.stringify(body) });
+            } else {
+                await api("/api/entries", { method: "POST", body: JSON.stringify(body) });
+            }
+            await onSaved();
+        });
+        const cancel = el("button", { className: "small", textContent: "Cancel" });
+        cancel.addEventListener("click", () => onCancel());
+        return el("div", { className: "edit-form" }, [select, from, "→", to, ticket, save, cancel]);
     }
 
     function esc(s) {
@@ -646,10 +733,15 @@ const TimeTracker = (() => {
             if (picked) setViewDate(picked);
         });
 
+        function viewBoundsMs() {
+            const lo = startOfLocalDay(viewDate);
+            return [lo.getTime(), addDays(lo, 1).getTime()];
+        }
+
         function timeCell(startMs, endMs, running) {
             return el("td", {
                 className: "row-time",
-                textContent: `${fmtClock(startMs)}–${running ? "now" : fmtClock(endMs)}`,
+                textContent: fmtRange(startMs, endMs, running, viewBoundsMs()[0]),
             });
         }
 
@@ -662,7 +754,12 @@ const TimeTracker = (() => {
             if (e.ticket) what.append(makeTicketPill(e.ticket));
             tr.append(what);
 
-            tr.append(el("td", { className: "num", textContent: fmtHoursMinutes(entryDurationSeconds(e)) }));
+            const [lo, hi] = viewBoundsMs();
+            const spent = el("td", { className: "num", textContent: fmtHoursMinutes(clippedSeconds(e, lo, hi)) });
+            if (Date.parse(e.start_ts) < lo || (e.end_ts ? Date.parse(e.end_ts) : Date.now()) > hi) {
+                spent.title = `Whole entry: ${fmtHoursMinutes(entryDurationSeconds(e))} (only this day's share is counted here)`;
+            }
+            tr.append(spent);
 
             const editBtn = el("button", { className: "small", textContent: "Edit", title: "Adjust topic / times / ticket" });
             editBtn.addEventListener("click", () => renderForm(tr, { entry: e }));
@@ -689,58 +786,16 @@ const TimeTracker = (() => {
         function renderForm(tr, { entry, gap }) {
             tr.className = "";
             tr.innerHTML = "";
-            const refMs = entry ? Date.parse(entry.start_ts) : gap.start;
-            let options = topicsCache;
-            if (entry && !options.some((t) => t.id === entry.topic_id)) {
-                options = [...options, { id: entry.topic_id, name: entry.topic_name, category_name: entry.category_name }];
-            }
-            const select = topicSelect(options, entry ? entry.topic_id : null, entry ? null : "Choose topic…");
-            const from = el("input", { type: "time", value: toLocalTimeInputValue(entry ? entry.start_ts : gap.start) });
-            const toDefault = entry ? (entry.end_ts ? toLocalTimeInputValue(entry.end_ts) : "") : toLocalTimeInputValue(gap.end);
-            const to = el("input", { type: "time", value: toDefault });
-            if (entry && !entry.end_ts) to.title = "Leave blank to keep this entry running; set a time to close it";
-            const ticket = el("input", { type: "text", placeholder: "ticket", value: entry && entry.ticket ? entry.ticket : "" });
-
-            const save = el("button", { className: "small primary", textContent: "Save" });
-            save.addEventListener("click", async () => {
-                if (!select.value) {
-                    alert("Choose a topic.");
-                    return;
-                }
-                const startIso = combineDateAndTime(new Date(refMs).toISOString(), from.value);
-                const endIso = to.value
-                    ? combineDateAndTime(new Date(entry && entry.end_ts ? Date.parse(entry.end_ts) : refMs).toISOString(), to.value)
-                    : null;
-                if (endIso && Date.parse(endIso) <= Date.parse(startIso)) {
-                    alert("The end time must be after the start time.");
-                    return;
-                }
-                if (entry) {
-                    const payload = { topic_id: parseInt(select.value, 10), start_ts: startIso, ticket: ticket.value };
-                    if (endIso) payload.end_ts = endIso;
-                    await api(`/api/entries/${entry.id}`, { method: "PATCH", body: JSON.stringify(payload) });
-                } else {
-                    if (!endIso) {
-                        alert("Enter an end time for the gap.");
-                        return;
-                    }
-                    await api("/api/entries", {
-                        method: "POST",
-                        body: JSON.stringify({
-                            topic_id: parseInt(select.value, 10),
-                            start_ts: startIso,
-                            end_ts: endIso,
-                            ticket: ticket.value,
-                        }),
-                    });
-                }
-                ticketCache.clear();
-                await Promise.all([refreshEntries(), refreshStatus(), refreshRecent()]);
+            const form = buildEntryForm({
+                entry,
+                gap,
+                topics: topicsCache,
+                onSaved: async () => {
+                    ticketCache.clear();
+                    await Promise.all([refreshEntries(), refreshStatus(), refreshRecent()]);
+                },
+                onCancel: () => refreshEntries(),
             });
-            const cancel = el("button", { className: "small", textContent: "Cancel" });
-            cancel.addEventListener("click", () => refreshEntries());
-
-            const form = el("div", { className: "edit-form" }, [select, from, "–", to, ticket, save, cancel]);
             tr.append(el("td", { colSpan: 4 }, [form]));
         }
 
@@ -748,7 +803,7 @@ const TimeTracker = (() => {
             const { start, end } = dayBoundsIso(viewDate);
             const dateStr = toLocalDateInputValue(viewDate);
             const [entries, dayResp] = await Promise.all([
-                api(`/api/entries?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`),
+                api(`/api/entries?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&overlap=1`),
                 api(`/api/day?date=${dateStr}`),
             ]);
             viewEntries = entries;
@@ -781,8 +836,10 @@ const TimeTracker = (() => {
             section.style.display = entries.length || gaps.length ? "" : "none";
             const byTopic = new Map();
             let tracked = 0;
+            const [lo, hi] = viewBoundsMs();
             for (const e of entries) {
-                const secs = entryDurationSeconds(e);
+                const secs = clippedSeconds(e, lo, hi);
+                if (secs <= 0) continue;
                 tracked += secs;
                 const row = byTopic.get(e.topic_id) || { category: e.category_name, topic: e.topic_name, secs: 0 };
                 row.secs += secs;
@@ -1041,6 +1098,7 @@ const TimeTracker = (() => {
 
     function initWeek() {
         let weekOffset = 0;
+        let topics = [];
 
         function mondayOf(date) {
             const d = startOfLocalDay(date);
@@ -1056,6 +1114,19 @@ const TimeTracker = (() => {
             return d.toLocaleDateString([], { month: "short", day: "numeric" });
         }
 
+        // Spread [startMs, endMs) over the local days it touches.
+        function addAcrossDays(map, startMs, endMs) {
+            let cursor = startMs;
+            while (cursor < endMs) {
+                const d = new Date(cursor);
+                const nextMidnight = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime();
+                const sliceEnd = Math.min(endMs, nextMidnight);
+                const key = toLocalDateInputValue(d);
+                map.set(key, (map.get(key) || 0) + (sliceEnd - cursor) / 1000);
+                cursor = sliceEnd;
+            }
+        }
+
         async function render() {
             const { start, end } = weekRange(weekOffset);
             const range = `${fmtDate(start)} – ${fmtDate(addDays(end, -1))}`;
@@ -1064,27 +1135,35 @@ const TimeTracker = (() => {
             const q = `start=${encodeURIComponent(start.toISOString())}&end=${encodeURIComponent(end.toISOString())}`;
             const exportLink = document.getElementById("export-link");
             if (exportLink) exportLink.href = `/api/export?${q}`;
-            const entries = await api(`/api/entries?${q}`);
+            // overlap=1 also returns entries that began before Monday (overnight).
+            const entries = await api(`/api/entries?${q}&overlap=1`);
 
+            const lo = start.getTime();
+            const hi = end.getTime();
             let total = 0;
             const byCategory = new Map();
             const byTopic = new Map();
             const byDay = new Map();
+            const inWeek = [];
 
             for (const e of entries) {
-                const secs = entryDurationSeconds(e);
+                const s = Math.max(Date.parse(e.start_ts), lo);
+                const t = Math.min(e.end_ts ? Date.parse(e.end_ts) : Date.now(), hi);
+                if (t <= s) continue;
+                inWeek.push(e);
+                const secs = (t - s) / 1000;
                 total += secs;
                 byCategory.set(e.category_name, (byCategory.get(e.category_name) || 0) + secs);
                 const topicKey = `${e.category_name} / ${e.topic_name}`;
                 byTopic.set(topicKey, (byTopic.get(topicKey) || 0) + secs);
-                const dayKey = toLocalDateInputValue(new Date(e.start_ts));
-                byDay.set(dayKey, (byDay.get(dayKey) || 0) + secs);
+                addAcrossDays(byDay, s, t);
             }
 
             document.getElementById("week-total").textContent = fmtHoursMinutes(total);
             renderBars("by-category", byCategory);
             renderBars("by-topic", byTopic);
             renderDayTable(start, byDay);
+            renderEntries(inWeek, byDay, lo, hi);
         }
 
         function renderBars(containerId, map) {
@@ -1121,9 +1200,69 @@ const TimeTracker = (() => {
             }
         }
 
+        // Every entry of the week, grouped by the day it starts (Monday for
+        // ones that began earlier), editable with full date+time.
+        function renderEntries(entries, byDay, lo, hi) {
+            const body = document.getElementById("week-entries");
+            body.innerHTML = "";
+            if (!entries.length) {
+                body.append(el("tr", {}, [el("td", { colSpan: 4, className: "empty", textContent: "Nothing logged." })]));
+                return;
+            }
+            const sorted = [...entries].sort((a, b) => Date.parse(a.start_ts) - Date.parse(b.start_ts));
+            let currentKey = null;
+            for (const e of sorted) {
+                const shownStart = Math.max(Date.parse(e.start_ts), lo);
+                const dayStart = startOfLocalDay(new Date(shownStart));
+                const key = toLocalDateInputValue(dayStart);
+                if (key !== currentKey) {
+                    currentKey = key;
+                    body.append(el("tr", { className: "day-head" }, [
+                        el("th", { colSpan: 4 }, [
+                            el("a", { href: `/?d=${key}`, textContent: fmtDayLabel(dayStart), title: "Open this day" }),
+                            el("span", { className: "muted", textContent: `  ${fmtHoursMinutes(byDay.get(key) || 0)}` }),
+                        ]),
+                    ]));
+                }
+                const tr = el("tr");
+                renderEntryRow(tr, e, dayStart.getTime(), lo, hi);
+                body.append(tr);
+            }
+        }
+
+        function renderEntryRow(tr, e, refDayMs, lo, hi) {
+            tr.innerHTML = "";
+            tr.append(el("td", {
+                className: "row-time",
+                textContent: fmtRange(Date.parse(e.start_ts), e.end_ts ? Date.parse(e.end_ts) : 0, !e.end_ts, refDayMs),
+            }));
+            const what = el("td", {}, [makeTag(e.category_name), " ", e.topic_name]);
+            if (e.ticket) what.append(makeTicketPill(e.ticket));
+            tr.append(what);
+            tr.append(el("td", { className: "num", textContent: fmtHoursMinutes(clippedSeconds(e, lo, hi)) }));
+
+            const editBtn = el("button", { className: "small", textContent: "Edit", title: "Adjust topic / start / end (any date)" });
+            editBtn.addEventListener("click", () => {
+                tr.innerHTML = "";
+                tr.append(el("td", { colSpan: 4 }, [
+                    buildEntryForm({ entry: e, topics, onSaved: render, onCancel: render }),
+                ]));
+            });
+            const delBtn = el("button", { className: "small", textContent: "✕", title: "Delete entry" });
+            delBtn.addEventListener("click", async () => {
+                if (!confirm("Delete this entry?")) return;
+                await api(`/api/entries/${e.id}`, { method: "DELETE" });
+                await render();
+            });
+            tr.append(el("td", {}, [editBtn, delBtn]));
+        }
+
         document.getElementById("prev-week").addEventListener("click", () => { weekOffset -= 1; render(); });
         document.getElementById("next-week").addEventListener("click", () => { weekOffset += 1; render(); });
-        render();
+        api("/api/topics").then((t) => {
+            topics = t;
+            render();
+        });
     }
 
     // ---------------- Topics page ----------------

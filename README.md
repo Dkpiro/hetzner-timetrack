@@ -40,6 +40,13 @@ re-reads `/api/status` and resumes counting from `start_ts`.
   estimate, ticket), drag to prioritise, *Sort short -> long*, tick off, and
   *Move to next workday* (Fri -> Mon). The Today tab shows the top open task as
   "Next up" with a Start button that carries its topic and ticket.
+- **Editing across midnight:** every edit form uses full date + time, so an
+  entry can start or end on any day. The Week tab lists all of the week's
+  entries (including ones that began before Monday) for editing. Time is
+  split per day at midnight in the Today recap and the Week totals, and an
+  entry crossing midnight appears on both days (e.g. `Tue 22:30–Wed 01:00`).
+  Entries longer than 16h ask for confirmation; the server also refuses an
+  end that isn't after the start.
 - **Export:** `GET /api/export?start=...&end=...&format=csv|json` (ISO datetimes
   or `YYYY-MM-DD`, compared in UTC) for importing into other tools. Works with
   the normal login session, or with `Authorization: Bearer <token>` when
