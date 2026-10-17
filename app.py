@@ -86,6 +86,11 @@ def register_routes(app):
     def plan_page():
         return render_template("plan.html")
 
+    @app.route("/feedback")
+    @login_required
+    def feedback_page():
+        return render_template("feedback.html")
+
     @app.route("/topics")
     @login_required
     def topics_page():
@@ -652,6 +657,71 @@ def register_routes(app):
             )
         db.commit()
         return jsonify({"reordered": True})
+
+    # ---- API: feedback / improvement notes ----
+
+    FEEDBACK_MAX_CHARS = 5000
+
+    @app.route("/api/feedback", methods=["GET", "POST"])
+    @api_or_login_required
+    def api_feedback():
+        db = db_module.get_db()
+        if request.method == "POST":
+            if not session.get("logged_in"):
+                return jsonify({"error": "login required"}), 401
+            data = request.get_json(force=True)
+            text = (data.get("text") or "").strip()
+            if not text:
+                return jsonify({"error": "text required"}), 400
+            cur = db.execute(
+                "INSERT INTO feedback (created_at, page, text) VALUES (?, ?, ?)",
+                (
+                    db_module.now_iso(),
+                    (data.get("page") or "")[:300],
+                    text[:FEEDBACK_MAX_CHARS],
+                ),
+            )
+            db.commit()
+            return jsonify({"id": cur.lastrowid})
+        status = request.args.get("status", "all")
+        query = "SELECT id, created_at, page, text, status, note FROM feedback"
+        params = []
+        if status in ("open", "done"):
+            query += " WHERE status = ?"
+            params.append(status)
+        query += " ORDER BY id DESC"
+        return jsonify([dict(r) for r in db.execute(query, params).fetchall()])
+
+    @app.route("/api/feedback/<int:item_id>", methods=["PATCH", "DELETE"])
+    @login_required
+    def api_feedback_item(item_id):
+        db = db_module.get_db()
+        if request.method == "DELETE":
+            db.execute("DELETE FROM feedback WHERE id = ?", (item_id,))
+            db.commit()
+            return jsonify({"deleted": True})
+        data = request.get_json(force=True)
+        fields, values = [], []
+        if "text" in data:
+            text = (data["text"] or "").strip()
+            if not text:
+                return jsonify({"error": "text required"}), 400
+            fields.append("text = ?")
+            values.append(text[:FEEDBACK_MAX_CHARS])
+        if "status" in data:
+            if data["status"] not in ("open", "done"):
+                return jsonify({"error": "status must be open or done"}), 400
+            fields.append("status = ?")
+            values.append(data["status"])
+        if "note" in data:
+            fields.append("note = ?")
+            values.append((data["note"] or "").strip() or None)
+        if not fields:
+            return jsonify({"error": "nothing to update"}), 400
+        values.append(item_id)
+        db.execute(f"UPDATE feedback SET {', '.join(fields)} WHERE id = ?", values)
+        db.commit()
+        return jsonify({"id": item_id, "updated": True})
 
 
 app = create_app()

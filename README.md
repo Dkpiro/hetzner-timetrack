@@ -47,6 +47,12 @@ re-reads `/api/status` and resumes counting from `start_ts`.
   entry crossing midnight appears on both days (e.g. `Tue 22:30–Wed 01:00`).
   Entries longer than 16h ask for confirmation; the server also refuses an
   end that isn't after the start.
+- **Feedback:** the floating 💬 button (or `Alt+F`) on every page saves a note
+  with the page you were on; `/feedback` lists, edits, marks done and deletes
+  them. Stored in the `feedback` table (`status` open/done, optional `note`
+  for what was changed). To work through them: read the open items
+  (`GET /api/feedback?status=open`, or `SELECT * FROM feedback WHERE status='open'`
+  on the VM), implement, then set `status='done'` with a note.
 - **Export:** `GET /api/export?start=...&end=...&format=csv|json` (ISO datetimes
   or `YYYY-MM-DD`, compared in UTC) for importing into other tools. Works with
   the normal login session, or with `Authorization: Bearer <token>` when

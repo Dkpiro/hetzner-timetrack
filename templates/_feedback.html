@@ -1,0 +1,52 @@
+<button type="button" class="fb-btn" id="fb-btn" title="Leave feedback / an improvement idea (Alt+F)">💬</button>
+<div class="fb-panel" id="fb-panel" style="display:none;">
+    <textarea id="fb-text" rows="4" placeholder="What should be better? (Ctrl+Enter to save)"></textarea>
+    <div class="row-flex" style="margin-top:6px;">
+        <span class="muted" id="fb-msg" style="font-size:12px;"></span>
+        <span>
+            <a href="/feedback" style="font-size:12px;margin-right:8px;">All feedback</a>
+            <button type="button" class="small" id="fb-cancel">Close</button>
+            <button type="button" class="small primary" id="fb-send">Save</button>
+        </span>
+    </div>
+</div>
+<script>
+(function () {
+    var btn = document.getElementById("fb-btn");
+    var panel = document.getElementById("fb-panel");
+    var text = document.getElementById("fb-text");
+    var msg = document.getElementById("fb-msg");
+
+    function open() { panel.style.display = "block"; text.focus(); }
+    function close() { panel.style.display = "none"; msg.textContent = ""; }
+
+    async function send() {
+        var value = text.value.trim();
+        if (!value) return;
+        try {
+            var res = await fetch("/api/feedback", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ text: value, page: location.pathname + location.search }),
+            });
+            if (!res.ok) throw new Error("HTTP " + res.status);
+            text.value = "";
+            msg.textContent = "Saved ✓";
+            setTimeout(close, 900);
+        } catch (e) {
+            msg.textContent = "Could not save — your text is still here.";
+        }
+    }
+
+    btn.addEventListener("click", function () { panel.style.display === "none" ? open() : close(); });
+    document.getElementById("fb-cancel").addEventListener("click", close);
+    document.getElementById("fb-send").addEventListener("click", send);
+    text.addEventListener("keydown", function (ev) {
+        if (ev.key === "Escape") close();
+        if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); send(); }
+    });
+    document.addEventListener("keydown", function (ev) {
+        if (ev.altKey && ev.key.toLowerCase() === "f") { ev.preventDefault(); open(); }
+    });
+})();
+</script>

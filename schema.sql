@@ -41,6 +41,16 @@ CREATE TABLE IF NOT EXISTS plan_items (
     done INTEGER NOT NULL DEFAULT 0
 );
 
+-- Improvement notes captured while using the app, reviewed later with Claude.
+CREATE TABLE IF NOT EXISTS feedback (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    page TEXT,
+    text TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open',
+    note TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_plan_items_date ON plan_items(plan_date, sort_order);
 CREATE INDEX IF NOT EXISTS idx_time_entries_topic ON time_entries(topic_id);
 CREATE INDEX IF NOT EXISTS idx_time_entries_start ON time_entries(start_ts);

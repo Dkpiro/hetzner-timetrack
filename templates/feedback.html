@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Time Tracker — Feedback</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+{% set active = "feedback" %}{% include "_nav.html" %}
+<div class="page">
+    <div class="row-flex" style="margin-bottom:8px;">
+        <h1 style="margin:0;">Feedback</h1>
+        <span class="muted" id="fb-summary"></span>
+    </div>
+    <p class="muted" style="font-size:12px;margin-top:0;">
+        Collected with the 💬 button (Alt+F) on any page. Tell Claude “review feedback and implement changes”
+        and it works through the open items.
+    </p>
+    <h2>Open</h2>
+    <div id="fb-open"></div>
+    <h2>Done</h2>
+    <div id="fb-done"></div>
+</div>
+
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+<script>
+TimeTracker.initFeedback();
+</script>
+</body>
+</html>

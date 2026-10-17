@@ -1265,6 +1265,73 @@ const TimeTracker = (() => {
         });
     }
 
+    // ---------------- Feedback page ----------------
+
+    function initFeedback() {
+        const openBox = document.getElementById("fb-open");
+        const doneBox = document.getElementById("fb-done");
+
+        function fmtWhen(iso) {
+            return new Date(iso).toLocaleString([], { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+        }
+
+        function renderItem(item) {
+            const box = el("div", { className: "fb-item" });
+            const meta = el("div", { className: "meta" }, [`#${item.id} · ${fmtWhen(item.created_at)}`]);
+            if (item.page) {
+                meta.append(" · ", el("a", { href: item.page, textContent: item.page }));
+            }
+            const body = el("div", { className: "body", textContent: item.text });
+            box.append(meta, body);
+            if (item.note) box.append(el("div", { className: "note", textContent: item.note }));
+
+            const mk = (text, fn) => {
+                const b = el("button", { className: "small", textContent: text });
+                b.addEventListener("click", fn);
+                return b;
+            };
+            const acts = el("div", { className: "acts" }, [
+                mk(item.status === "open" ? "Done" : "Reopen", async () => {
+                    await api(`/api/feedback/${item.id}`, {
+                        method: "PATCH",
+                        body: JSON.stringify({ status: item.status === "open" ? "done" : "open" }),
+                    });
+                    load();
+                }),
+                mk("Edit", () => {
+                    const ta = el("textarea", { rows: 3, value: item.text });
+                    const save = el("button", { className: "small primary", textContent: "Save" });
+                    save.addEventListener("click", async () => {
+                        await api(`/api/feedback/${item.id}`, { method: "PATCH", body: JSON.stringify({ text: ta.value }) });
+                        load();
+                    });
+                    const cancel = el("button", { className: "small", textContent: "Cancel" });
+                    cancel.addEventListener("click", load);
+                    box.replaceChildren(meta, ta, el("div", { className: "acts" }, [save, cancel]));
+                }),
+                mk("✕", async () => {
+                    if (!confirm("Delete this feedback?")) return;
+                    await api(`/api/feedback/${item.id}`, { method: "DELETE" });
+                    load();
+                }),
+            ]);
+            box.append(acts);
+            return box;
+        }
+
+        async function load() {
+            const items = await api("/api/feedback");
+            const open = items.filter((i) => i.status === "open");
+            const done = items.filter((i) => i.status === "done");
+            document.getElementById("fb-summary").textContent = `${open.length} open · ${done.length} done`;
+            openBox.replaceChildren(...open.map(renderItem));
+            doneBox.replaceChildren(...done.map(renderItem));
+            if (!open.length) openBox.append(el("div", { className: "empty", textContent: "No open feedback." }));
+        }
+
+        load();
+    }
+
     // ---------------- Topics page ----------------
 
     function initTopics() {
@@ -1404,5 +1471,5 @@ const TimeTracker = (() => {
         setInterval(poll, 5000);
     }
 
-    return { initToday, initPlan, initWeek, initTopics, initWidget };
+    return { initToday, initPlan, initWeek, initTopics, initWidget, initFeedback };
 })();
